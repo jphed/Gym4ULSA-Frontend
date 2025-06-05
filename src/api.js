@@ -10,7 +10,7 @@ export async function login(email, password) {
         mutation {
           login(email: "${email}", password: "${password}") {
             token
-            user { id name email }
+            user { id name email role }
           }
         }
       `
@@ -20,17 +20,20 @@ export async function login(email, password) {
   return data.data.login;
 }
 
-export async function register(name, email, password) {
+// Permite enviar el rol solo si se especifica (solo admin debe enviarlo)
+export async function register(name, email, password, role) {
+  const rolePart = role ? `, role: "${role}"` : "";
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       query: `
         mutation {
-          createUser(name: "${name}", email: "${email}", password: "${password}") {
+          createUser(name: "${name}", email: "${email}", password: "${password}"${rolePart}) {
             id
             name
             email
+            role
           }
         }
       `

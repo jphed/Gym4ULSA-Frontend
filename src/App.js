@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import {
-  login, register, getUsers, updateUser, deleteUser,
-  getExercises, createExercise, updateExercise, deleteExercise,
-  getRoutines, createRoutine, updateRoutine, deleteRoutine,
-  getLogs, createLog, updateLog, deleteLog
+  login, register, getUsers, deleteUser,
+  getExercises, createExercise, deleteExercise,
+  getRoutines, createRoutine, deleteRoutine,
+  getLogs, createLog, deleteLog
 } from "./api";
 import {
-  Container, Box, Typography, TextField, Button, Paper, AppBar, Toolbar, Tabs, Tab, List, ListItem, ListItemText, Divider
+  Container, Box, Typography, TextField, Button, Paper, AppBar, Toolbar, Tabs, Tab, List, ListItem, ListItemText
 } from "@mui/material";
 import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
 
@@ -24,7 +24,7 @@ function App() {
   const [registerMode, setRegisterMode] = useState(false);
 
   // Formularios para crear entidades
-  const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "cliente" });
   const [newExercise, setNewExercise] = useState({ name: "", type: "", muscle: "", equipment: "", difficulty: "", instructions: "" });
   const [newRoutine, setNewRoutine] = useState({ name: "", user_id: "" });
   const [newLog, setNewLog] = useState({ user_id: "", exercise_id: "", date: "", sets: "", reps: "", weight: "" });
@@ -43,7 +43,9 @@ function App() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    const result = await register(name, email, password);
+    // Solo admin puede elegir rol, clientes siempre serán 'cliente'
+    const role = user && user.role === "admin" ? newUser.role : "cliente";
+    const result = await register(name, email, password, role);
     if (result && result.id) {
       alert("Usuario registrado, ahora puedes iniciar sesión");
       setRegisterMode(false);
@@ -61,14 +63,15 @@ function App() {
     setLogs([]);
   };
 
-  // CRUD Usuarios
+  // CRUD Usuarios (solo admin)
   const fetchUsers = async () => setUsers(await getUsers(token));
   const handleCreateUser = async (e) => {
     e.preventDefault();
-    const created = await register(newUser.name, newUser.email, newUser.password);
+    const role = user && user.role === "admin" ? newUser.role : "cliente";
+    const created = await register(newUser.name, newUser.email, newUser.password, role);
     if (created) {
       alert("Usuario creado");
-      setNewUser({ name: "", email: "", password: "" });
+      setNewUser({ name: "", email: "", password: "", role: "cliente" });
       fetchUsers();
     }
   };
@@ -98,10 +101,22 @@ function App() {
   };
 
   // CRUD Rutinas
-  const fetchRoutines = async () => setRoutines(await getRoutines(token));
+  const fetchRoutines = async () => {
+    const allRoutines = await getRoutines(token);
+    // Si es cliente, solo ve sus rutinas
+    if (user && user.role !== "admin") {
+      setRoutines(allRoutines.filter(r => String(r.user_id) === String(user.id)));
+    } else {
+      setRoutines(allRoutines);
+    }
+  };
   const handleCreateRoutine = async (e) => {
     e.preventDefault();
-    const created = await createRoutine(newRoutine, token);
+    // Si es cliente, solo puede crear rutinas para sí mismo
+    const routineData = user && user.role !== "admin"
+      ? { ...newRoutine, user_id: user.id }
+      : newRoutine;
+    const created = await createRoutine(routineData, token);
     if (created) {
       alert("Rutina creada");
       setNewRoutine({ name: "", user_id: "" });
@@ -116,10 +131,22 @@ function App() {
   };
 
   // CRUD Logs
-  const fetchLogs = async () => setLogs(await getLogs(token));
+  const fetchLogs = async () => {
+    const allLogs = await getLogs(token);
+    // Si es cliente, solo ve sus logs
+    if (user && user.role !== "admin") {
+      setLogs(allLogs.filter(l => String(l.user_id) === String(user.id)));
+    } else {
+      setLogs(allLogs);
+    }
+  };
   const handleCreateLog = async (e) => {
     e.preventDefault();
-    const created = await createLog(newLog, token);
+    // Si es cliente, solo puede crear logs para sí mismo
+    const logData = user && user.role !== "admin"
+      ? { ...newLog, user_id: user.id }
+      : newLog;
+    const created = await createLog(logData, token);
     if (created) {
       alert("Log creado");
       setNewLog({ user_id: "", exercise_id: "", date: "", sets: "", reps: "", weight: "" });
@@ -179,6 +206,21 @@ function App() {
               margin="normal"
               required
             />
+            {/* Solo admin puede elegir rol en el registro */}
+            {user && user.role === "admin" && registerMode && (
+              <TextField
+                select
+                label="Rol"
+                value={newUser.role}
+                onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                SelectProps={{ native: true }}
+                fullWidth
+                margin="normal"
+              >
+                <option value="cliente">Cliente</option>
+                <option value="admin">Admin</option>
+              </TextField>
+            )}
             <Button
               type="submit"
               variant="contained"
@@ -200,22 +242,34 @@ function App() {
       ) : (
         <Box sx={{ mt: 4 }}>
           <Typography variant="h5" gutterBottom>
-            Bienvenido, {user.name} ({user.email})
+            Bienvenido, {user.name} ({user.email}) - Rol: {user.role}
           </Typography>
           <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-            <Tab label="Usuarios" />
+            {/* Solo admin puede ver la pestaña de usuarios */}
+            {user.role === "admin" && <Tab label="Usuarios" />}
             <Tab label="Rutinas" />
             <Tab label="Ejercicios" />
             <Tab label="Logs" />
           </Tabs>
-          {/* Usuarios */}
-          {tab === 0 && (
+          {/* Usuarios (solo admin) */}
+          {tab === 0 && user.role === "admin" && (
             <Paper sx={{ p: 2, mb: 2 }}>
               <Typography variant="h6">Crear usuario</Typography>
               <form onSubmit={handleCreateUser} style={{ display: "flex", gap: 8, marginBottom: 16 }}>
                 <TextField label="Nombre" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} required />
                 <TextField label="Email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} required />
                 <TextField label="Contraseña" type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} required />
+                <TextField
+                  select
+                  label="Rol"
+                  value={newUser.role}
+                  onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                  SelectProps={{ native: true }}
+                  required
+                >
+                  <option value="cliente">Cliente</option>
+                  <option value="admin">Admin</option>
+                </TextField>
                 <Button type="submit" variant="contained">Crear</Button>
               </form>
               <Button variant="contained" onClick={fetchUsers}>Ver usuarios</Button>
@@ -224,19 +278,22 @@ function App() {
                   <ListItem key={u.id} secondaryAction={
                     <Button color="error" onClick={() => handleDeleteUser(u.id)}>Eliminar</Button>
                   }>
-                    <ListItemText primary={u.name} secondary={u.email} />
+                    <ListItemText primary={`${u.name} (${u.role})`} secondary={u.email} />
                   </ListItem>
                 ))}
               </List>
             </Paper>
           )}
           {/* Rutinas */}
-          {tab === 1 && (
+          {(tab === 0 && user.role !== "admin") || (tab === 1 && user.role === "admin") ? (
             <Paper sx={{ p: 2, mb: 2 }}>
               <Typography variant="h6">Crear rutina</Typography>
               <form onSubmit={handleCreateRoutine} style={{ display: "flex", gap: 8, marginBottom: 16 }}>
                 <TextField label="Nombre" value={newRoutine.name} onChange={e => setNewRoutine({ ...newRoutine, name: e.target.value })} required />
-                <TextField label="ID Usuario" value={newRoutine.user_id} onChange={e => setNewRoutine({ ...newRoutine, user_id: e.target.value })} required />
+                {/* Solo admin puede elegir user_id */}
+                {user.role === "admin" && (
+                  <TextField label="ID Usuario" value={newRoutine.user_id} onChange={e => setNewRoutine({ ...newRoutine, user_id: e.target.value })} required />
+                )}
                 <Button type="submit" variant="contained">Crear</Button>
               </form>
               <Button variant="contained" onClick={fetchRoutines}>Ver rutinas</Button>
@@ -250,9 +307,9 @@ function App() {
                 ))}
               </List>
             </Paper>
-          )}
+          ) : null}
           {/* Ejercicios */}
-          {tab === 2 && (
+          {(tab === 1 && user.role !== "admin") || (tab === 2 && user.role === "admin") ? (
             <Paper sx={{ p: 2, mb: 2 }}>
               <Typography variant="h6">Crear ejercicio</Typography>
               <form onSubmit={handleCreateExercise} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
@@ -275,13 +332,16 @@ function App() {
                 ))}
               </List>
             </Paper>
-          )}
+          ) : null}
           {/* Logs */}
-          {tab === 3 && (
+          {(tab === 2 && user.role !== "admin") || (tab === 3 && user.role === "admin") ? (
             <Paper sx={{ p: 2, mb: 2 }}>
               <Typography variant="h6">Crear log</Typography>
               <form onSubmit={handleCreateLog} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-                <TextField label="ID Usuario" value={newLog.user_id} onChange={e => setNewLog({ ...newLog, user_id: e.target.value })} required />
+                {/* Solo admin puede elegir user_id */}
+                {user.role === "admin" && (
+                  <TextField label="ID Usuario" value={newLog.user_id} onChange={e => setNewLog({ ...newLog, user_id: e.target.value })} required />
+                )}
                 <TextField label="ID Ejercicio" value={newLog.exercise_id} onChange={e => setNewLog({ ...newLog, exercise_id: e.target.value })} required />
                 <TextField label="Fecha" value={newLog.date} onChange={e => setNewLog({ ...newLog, date: e.target.value })} required />
                 <TextField label="Sets" value={newLog.sets} onChange={e => setNewLog({ ...newLog, sets: e.target.value })} />
@@ -303,7 +363,7 @@ function App() {
                 ))}
               </List>
             </Paper>
-          )}
+          ) : null}
         </Box>
       )}
     </Container>
